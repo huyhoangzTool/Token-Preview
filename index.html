@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<title>Discord Token Preview</title>
+<style>
+  body { font-family: monospace; background:#1e1e1e; color:#d4d4d4; padding:20px; }
+  input, button { padding:8px; font-family:monospace; background:#2d2d2d; color:#d4d4d4; border:1px solid #444; }
+  button { cursor:pointer; }
+  pre { background:#252526; padding:12px; border:1px solid #333; overflow:auto; white-space:pre-wrap; word-break:break-all; }
+  .key { color:#9cdcfe; }
+  .val { color:#ce9178; }
+  .err { color:#f48771; }
+</style>
+</head>
+<body>
+<h3>Discord Token Preview</h3>
+<input id="token" placeholder="Dán token Discord vào đây..." style="width:60%">
+<button onclick="preview()">Preview</button>
+<pre id="out">Chưa có dữ liệu.</pre>
+
+<script>
+// Hàm giải mã base64url không dùng thư viện ngoài
+function b64urlDecode(str) {
+  // Thay thế ký tự base64url sang base64 chuẩn
+  str = str.replace(/-/g, '+').replace(/_/g, '/');
+  // Bù padding '=' nếu thiếu
+  while (str.length % 4) str += '=';
+  // Giải mã base64 và chuyển sang UTF-8
+  const bin = atob(str);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+  return new TextDecoder('utf-8').decode(bytes);
+}
+
+// Chuyển timestamp Unix sang chuỗi ngày giờ
+function tsToDate(ts) {
+  if (!ts) return 'N/A';
+  const d = new Date(ts * 1000);
+  return d.toISOString() + ' (' + d.toString() + ')';
+}
+
+function preview() {
+  const out = document.getElementById('out');
+  const token = document.getElementById('token').value.trim();
+
+  if (!token) {
+    out.innerHTML = '<span class="err">Token trống.</span>';
+    return;
+  }
+
+  // Token Discord có 3 phần ngăn bởi dấu chấm: header.payload.signature
+  const parts = token.split('.');
+  if (parts.length !== 3) {
+    out.innerHTML = '<span class="err">Token không hợp lệ. Phải có 3 phần ngăn bởi dấu chấm.</span>';
+    return;
+  }
+
+  const [headerB64, payloadB64, signature] = parts;
+
+  let header, payload;
+  try {
+    header = JSON.parse(b64urlDecode(headerB64));
+  } catch (e) {
+    out.innerHTML = '<span class="err">Không giải mã được phần header: ' + e.message + '</span>';
+    return;
+  }
+
+  try {
+    payload = JSON.parse(b64urlDecode(payloadB64));
+  } catch (e) {
+    out.innerHTML = '<span class="err">Không giải mã được phần payload: ' + e.message + '</span>';
+    return;
+  }
+
+  // Xây dựng nội dung hiển thị có cấu trúc
+  const lines = [];
+  lines.push('=== HEADER ===');
+  for (const k in header) {
+    lines.push('  ' + k + ': ' + JSON.stringify(header[k]));
+  }
+
+  lines.push('');
+  lines.push('=== PAYLOAD ===');
+  for (const k in payload) {
+    let v = payload[k];
+    // Nếu là timestamp thì hiển thị thêm dạng ngày giờ
+    if ((k === 'iat' || k === 'nbf' || k === 'exp') && typeof v === 'number') {
+      v = v + '  =>  ' + tsToDate(v);
+    }
+    lines.push('  ' + k + ': ' + (typeof v === 'object' ? JSON.stringify(v, null, 2) : v));
+  }
+
+  lines.push('');
+  lines.push('=== SIGNATURE (base64url) ===');
+  lines.push('  ' + signature);
+  lines.push('');
+  lines.push('=== SIGNATURE (hex) ===');
+  try {
+    // Giải mã base64url signature sang byte và in hex
+    let s = signature.replace(/-/g, '+').replace(/_/g, '/');
+    while (s.length % 4) s += '=';
+    const bin = atob(s);
+    const hex = Array.from(bin).map(c => c.charCodeAt(0).toString(16).padStart(2, '0')).join('');
+    lines.push('  ' + hex);
+  } catch (e) {
+    lines.push('  Không giải mã được: ' + e.message);
+  }
+
+  // Phân tích nhanh một số trường quan trọng nếu có
+  lines.push('');
+  lines.push('=== PHÂN TÍCH NHANH ===');
+  if (payload.id) lines.push('  User ID: ' + payload.id);
+  if (payload.username) lines.push('  Username: ' + payload.username);
+  if (payload.discriminator !== undefined) lines.push('  Discriminator: ' + payload.discriminator);
+  if (payload.global_name) lines.push('  Global name: ' + payload.global_name);
+  if (payload.email) lines.push('  Email: ' + payload.email);
+  if (payload.phone) lines.push('  Phone: ' + payload.phone);
+  if (payload.verified !== undefined) lines.push('  Verified: ' + payload.verified);
+  if (payload.mfa_enabled !== undefined) lines.push('  MFA enabled: ' + payload.mfa_enabled);
+  if (payload.iat) lines.push('  Issued at: ' + tsToDate(payload.iat));
+  if (payload.nbf) lines.push('  Not before: ' + tsToDate(payload.nbf));
+  if (payload.exp) lines.push('  Expires at: ' + tsToDate(payload.exp));
+  if (payload.flags !== undefined) lines.push('  Flags: ' + payload.flags);
+  if (payload.premium_type !== undefined) lines.push('  Premium type: ' + payload.premium_type);
+
+  out.textContent = lines.join('\n');
+}
+</script>
+</body>
+</html>
